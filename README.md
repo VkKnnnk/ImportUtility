@@ -1,6 +1,6 @@
 Проект разработан по заданию: https://github.com/STARKOV-Group/SGTest
 
-(База данных: MS SQL    Язык: C#)
+(База данных: MS SQL  Язык: C#  Способ подключения БД: Scaffold-DBContext)
 
 
 
