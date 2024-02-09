@@ -3087,11 +3087,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\vikto\\Desktop\\Project\\ImportUtility\\ImportUtility.csproj",
+      "projectUniqueName": "C:\\Users\\vikto\\Desktop\\RegexProjects\\ImportUtility\\ImportUtility.csproj",
       "projectName": "ImportUtility",
-      "projectPath": "C:\\Users\\vikto\\Desktop\\Project\\ImportUtility\\ImportUtility.csproj",
+      "projectPath": "C:\\Users\\vikto\\Desktop\\RegexProjects\\ImportUtility\\ImportUtility.csproj",
       "packagesPath": "C:\\Users\\vikto\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\vikto\\Desktop\\Project\\ImportUtility\\obj\\",
+      "outputPath": "C:\\Users\\vikto\\Desktop\\RegexProjects\\ImportUtility\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",

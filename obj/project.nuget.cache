@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "TPp1g75YaD+tey9jUhDHu1FmxY0hmt2mfKX/qVY6c+5j+IocvIj3U9y3nzPkLagH5DjXoN7LUHP8wH/Z8rADGg==",
+  "dgSpecHash": "gbo7QYB4DWz0eej+XOpqlQGBl9BeXmUC0QIRVGWWR9tovk4m7bXsRhG/JyavagQraQFfh3GlOjT7ivSCqJSwAg==",
   "success": true,
-  "projectFilePath": "C:\\Users\\vikto\\Desktop\\Project\\ImportUtility\\ImportUtility.csproj",
+  "projectFilePath": "C:\\Users\\vikto\\Desktop\\RegexProjects\\ImportUtility\\ImportUtility.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\vikto\\.nuget\\packages\\azure.core\\1.25.0\\azure.core.1.25.0.nupkg.sha512",
     "C:\\Users\\vikto\\.nuget\\packages\\azure.identity\\1.7.0\\azure.identity.1.7.0.nupkg.sha512",
