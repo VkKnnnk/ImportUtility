@@ -1,92 +1,99 @@
-﻿using ImportUtility.View_Model;
-using System;
-using System.Collections.Generic;
+﻿using System;
 
 namespace ImportUtility
 {
     class Program
     {
-        static bool exit = false;
-        static void Main()
+        static void Main(string[] args)
         {
-            while (!exit)
+            switch (args[0].ToUpper())
             {
-                Console.Clear();
-                Console.WriteLine("||||||||||||||-----МЕНЮ-----||||||||||||||");
-                Console.WriteLine("I - Импорт");
-                Console.WriteLine("O - Вывод");
-                Console.WriteLine("E - Выход");
-                Console.WriteLine("||||||||||||||||||||||||||||||||||||||||||");
-                Console.WriteLine("Выберите пункт меню:");
-                ConsoleKey selectedMenuOption = Console.ReadKey().Key;
-                Console.Clear();
-                switch (selectedMenuOption)
-                {
-                    //Выбран импорт
-                    case ConsoleKey.I:
-                        Console.Clear();
-                        List<string> stringsList = new();
-                        while (stringsList.Count == 0)
+                case "HELP":
+                    {
+                        Console.WriteLine("Команды, доступные в программе:\n");
+                        Console.WriteLine("Выполнить импорт:");
+                        Console.WriteLine("\t{0,-35} Импорт данных из файла в базу данных.", "import [имя_файла] [тип_импорта]");
+                        Console.WriteLine("\t\t-- {0,-24} Обозначает имя файла, из которого будет производиться импорт.", "[имя_файла]");
+                        Console.WriteLine("\t\t-- {0,-24} Обозначает, в какую таблицу программе импортировать данные.", "[тип_импорта]");
+                        Console.WriteLine("\t\t{0,-28}(`D` - таблица подразделения, `E` - таблица сотрудники, `P` таблица должности)", "");
+                        Console.WriteLine();
+                        Console.WriteLine("Выполнить вывод:");
+                        Console.WriteLine("\t{0,-35} Вывод иерархии подразделений.", "output");
+                        Console.WriteLine("\t{0,-35} Вывод иерархии подразделений для конкректного подразделения.", "output [id_department]");
+                        Console.WriteLine("\t\t-- {0,-24} Обозначает, иерархию какого подразделения вывести.", "[id_department]");
+                        Console.WriteLine();
+                        break;
+                    }
+                case "OUTPUT":
+                    {
+                        switch (args.Length)
                         {
-                            stringsList = ImportFunctions.SelectFile();
-                        }
-                        Console.Clear();
-                        Console.WriteLine($"Файл прочитан успешно ({stringsList.Count} строк)\n");
-                        ConsoleKey selectedImportTableOption = new();
-                        while (selectedImportTableOption != ConsoleKey.D1 && selectedImportTableOption != ConsoleKey.D2 && selectedImportTableOption != ConsoleKey.D3)
-                        {
-                            Console.Clear();
-                            Console.WriteLine("Выберите таблицу, в которую хотите импортировать данные");
-                            Console.WriteLine("1 - Должности");
-                            Console.WriteLine("2 - Подразделения");
-                            Console.WriteLine("3 - Сотрудники");
-                            selectedImportTableOption = Console.ReadKey().Key;
-                        }
-                        Console.Clear();
-                        switch (selectedImportTableOption)
-                        {
-                            case ConsoleKey.D1:
-                                ImportFunctions.StartImport(stringsList, 1);
-                                break;
-                            case ConsoleKey.D2:
-                                ImportFunctions.StartImport(stringsList, 2);
-                                break;
-                            case ConsoleKey.D3:
-                                ImportFunctions.StartImport(stringsList, 3);
-                                break;
+                            case 1:
+                                {
+                                    //Вывод иерархии подразделений
+                                    //Output()
+                                    break;
+                                }
+                            case 2:
+                                {
+                                    //Вывод иерархии подразделений подразделения
+                                    //Output(id)
+                                    break;
+                                }
+                            default:
+                                {
+                                    Console.WriteLine($"Команда `output` не может содержать {args.Length} параметр(ов). Введите `help` для получения информации о доступных командах");
+                                    break;
+                                }
                         }
                         break;
-                    case ConsoleKey.O:
-                        //Выбран вывод
-                        ConsoleKey selectedOutputTableOption = new();
-                        while (selectedOutputTableOption != ConsoleKey.D1 && selectedOutputTableOption != ConsoleKey.D2 && selectedOutputTableOption != ConsoleKey.D3)
+                    }
+                case "IMPORT":
+                    {
+                        switch (args.Length)
                         {
-                            Console.Clear();
-                            Console.WriteLine("Выберите таблицу");
-                            Console.WriteLine("1 - Должности");
-                            Console.WriteLine("2 - Подразделения");
-                            Console.WriteLine("3 - Сотрудники");
-                            selectedOutputTableOption = Console.ReadKey().Key;
-                        }
-                        Console.Clear();
-                        switch (selectedOutputTableOption)
-                        {
-                            case ConsoleKey.D1:
-                                OutputFunctions.StartOutput(1);
-                                break;
-                            case ConsoleKey.D2:
-                                OutputFunctions.StartOutput(2);
-                                break;
-                            case ConsoleKey.D3:
-                                OutputFunctions.StartOutput(3);
-                                break;
+                            case 3:
+                                {
+                                    switch (args[3].ToUpper())
+                                    {
+                                        case "D":
+                                            {
+                                                //Импорт подразделения
+                                                break;
+                                            }
+                                        case "E":
+                                            {
+                                                //Импорт сотрудника
+                                                break;
+                                            }
+                                        case "P":
+                                            {
+                                                //Импорт должности
+                                                break;
+                                            }
+                                        default:
+                                            {
+                                                Console.WriteLine($"Неизвестный параметр `{args[3]}` для команды `import`. Введите `help` для получения информации о доступных командах");
+                                                break;
+                                            }
+                                    }
+                                    break;
+                                }
+                            default:
+                                {
+                                    Console.WriteLine($"Команда `import` не может содержать {args.Length} параметр(ов). Введите `help` для получения информации о доступных командах");
+                                    break;
+                                }
                         }
                         break;
-                    case ConsoleKey.E:
-                        exit = true;
+                    }
+                default:
+                    {
+                        Console.WriteLine("Неизвестная команда. Введите `help` для получения информации о доступных командах.");
                         break;
-                }
+                    }
             }
         }
     }
 }
+
