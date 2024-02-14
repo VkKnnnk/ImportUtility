@@ -1,4 +1,6 @@
 ﻿using ImportUtility.Model;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,570 +12,347 @@ using System.Threading.Tasks;
 
 namespace ImportUtility.View_Model
 {
-    public static class ImportFunctions
+    public class ImportFunctions
     {
-        public static async void StartImport(List<string> stringsList, int idTable)
+        #region Constants
+        private const string TABLE_D = "d";
+        private const string TABLE_E = "e";
+        private const string TABLE_P = "p";
+        #endregion
+        #region Properties
+        private static Dictionary<string, Department> DepartmentsDict { get; set; }
+        private static Dictionary<string, Employee> EmployeesDict { get; set; }
+        private static Dictionary<string, Position> PositionsDict { get; set; }
+        #endregion
+        #region Parse methods
+        public static void ParseDataFromFile(string filename, string type)
         {
-            Console.Clear();
-            Console.WriteLine("Запущен процесс очистки пробелов, пожалуйста, подождите..");
-            stringsList = await Task.Run(() => RemoveSpaces(stringsList));
-            Console.Clear();
-            if (stringsList.Count > 0)
+            string parsePattern;
+            string groupPattern;
+
+            if (!File.Exists(filename))
+                throw new FileNotFoundException($"Файла `{filename}` не существует");
+
+            using (UnkCompanyDBContext dBContext = new UnkCompanyDBContext())
             {
-                Console.WriteLine("Очистка пробелов завершена успешно\n");
-                switch (idTable)
+                if (!dBContext.Database.CanConnect())
+                    throw new Exception("Отсутствует подключение к базе данных");
+
+                switch (type)
                 {
-                    case 1:
-                        Console.WriteLine("Запущен процесс проверки формата, пожалуйста, подождите..");
-                        List<Position> positions = await Task.Run(() => CheckFormatToPositions(stringsList));
-                        Console.Clear();
-                        if (positions.Count > 0)
+                    case TABLE_D:
                         {
-                            Console.WriteLine("Форматирование завершено успешно\n");
-                            Console.WriteLine("Запущен процесс добавления данных в базу, пожалуйста, подождите..");
-                            int info = await Task.Run(() => AddOrChangePosition(positions));
-                            Console.Clear();
-                            Console.WriteLine("Результат:");
-                            Console.WriteLine($"Добавлено:{info} записей");
+                            DepartmentsDict = dBContext.Departments.ToDictionary(x => x.Title.ToLower());
+                            EmployeesDict = dBContext.Employees.ToDictionary(x => x.Fullname.ToLower());
+
+                            groupPattern = "$1\t$2\t$3\t$4";
+                            parsePattern = @"(\S[-\w ]+\S) *\t *([-\w ]+\S)? *\t *([-\w ]+\S)? *\t *([-\d ()]+\S)";
+                            break;
                         }
-                        else
-                            Session.badStrings.Insert(0, "Ошибка: Ни одна строка файла не прошла проверку на формат\nВыбранная таблица: Должности");
-                        break;
-                    case 2:
-                        Console.WriteLine("Запущен процесс замены слов на индексы, пожалуйста, подождите..");
-                        stringsList = await Task.Run(() => ReplaceWordsDepartments(stringsList));
-                        Console.Clear();
-                        if (stringsList.Count > 0)
+                    case TABLE_E:
                         {
-                            Console.WriteLine("Замена слов завершено успешно\n");
-                            Console.WriteLine("Запущен процесс проверки формата, пожалуйста, подождите..");
-                            List<Department> departments = await Task.Run(() => CheckFormatToDepartments(stringsList));
-                            Console.Clear();
-                            if (departments.Count > 0)
-                            {
-                                Console.WriteLine("Форматирование завершено успешно\n");
-                                Console.WriteLine("Запущен процесс добавления данных в базу, пожалуйста, подождите..");
-                                int[] info = await Task.Run(() => AddOrChangeDepartment(departments));
-                                Console.Clear();
-                                Console.WriteLine("Результат:");
-                                Console.WriteLine($"Добавлено:{info[0]} записей");
-                                Console.WriteLine($"Изменено:{info[1]} записей");
-                            }
+                            DepartmentsDict = dBContext.Departments.ToDictionary(x => x.Title.ToLower());
+                            PositionsDict = dBContext.Positions.ToDictionary(x => x.Title.ToLower());
+
+                            groupPattern = "$1\t$2\t$3\t$4\t$5";
+                            parsePattern = @"(\S[-\w ]+\S)? *\t *([-\w ]+\S) *\t *([^\t]+) *\t *([^\t]+) *\t *([-\w ]+\S)";
+                            break;
+                        }
+                    case TABLE_P:
+                        {
+                            groupPattern = "$1";
+                            parsePattern = @"(\S[-\w ]+\S)";
+                            break;
+                        }
+                    default:
+                        throw new ArgumentOutOfRangeException(type);
+                }
+
+                using (FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read))
+                {
+                    using (StreamReader sr = new(fs))
+                    {
+                        sr.ReadLine();
+                        while (!sr.EndOfStream)
+                        {
+                            string data = sr.ReadLine();
+                            if (String.IsNullOrWhiteSpace(data))
+                                continue;
+
+                            Match parseMatch = Regex.Match(data, parsePattern);
+                            if (!parseMatch.Success)
+                                continue;
+
+                            string[] parsedData = Regex.Replace(
+                                Regex.Replace(parseMatch.Value, parsePattern, groupPattern),
+                                @" +", " ").Split('\t');
+
+                            object mappedData = MapDataToIds(parsedData, type);
+                            if (mappedData is null)
+                                continue;
+
+                            UpdateOrAddDBData(mappedData, type, dBContext);
+                        }
+                    }
+                }
+                DisplayDepartments(dBContext);
+                DisplayEmployees(dBContext);
+                DisplayPositions(dBContext);
+
+                dBContext.SaveChanges();
+            }
+        }
+
+        private static object MapDataToIds(string[] data, string type)
+        {
+            switch (type)
+            {
+                case TABLE_D:
+                    {
+                        int? parsedIdParrent = null;
+                        int? parsedIdDirector = null;
+                        if (!string.IsNullOrEmpty(data[1]))
+                            if (DepartmentsDict.ContainsKey(data[1].ToLower()))
+                                parsedIdParrent = DepartmentsDict[data[1].ToLower()].IdDepartment;
                             else
-                                Session.badStrings.Insert(0, "Ошибка: Ни одна строка файла не прошла проверку на формат\nВыбранная таблица: Подразделения");
-                        }
+                                return null;
+
+                        if (EmployeesDict.ContainsKey(data[2].ToLower()))
+                            parsedIdDirector = EmployeesDict[data[2].ToLower()].IdEmployee;
+
+                        return new Department
+                        {
+                            Title = data[0],
+                            IdParentDepartment = parsedIdParrent,
+                            IdDirector = parsedIdDirector,
+                            Phone = data[3]
+                        };
+                    }
+                case TABLE_E:
+                    {
+                        int? parsedIdDepartment = null;
+                        if (PositionsDict.ContainsKey(data[4].ToLower()))
+                            data[4] = PositionsDict[data[4].ToLower()].IdPosition.ToString();
                         else
-                            Session.badStrings.Insert(0, "Ошибка: Ни одна строка файла не прошла проверку на формат\nВыбранная таблица: Подразделения");
-                        break;
-                    case 3:
-                        Console.WriteLine("Запущен процесс замены слов на индексы, пожалуйста, подождите..");
-                        stringsList = await Task.Run(() => ReplaceWordsEmployees(stringsList));
-                        Console.Clear();
-                        if (stringsList.Count > 0)
-                        {
-                            Console.WriteLine("Замена слов завершено успешно\n");
-                            Console.WriteLine("Запущен процесс проверки формата, пожалуйста, подождите..");
-                            List<Employee> employees = await Task.Run(() => CheckFormatToEmployees(stringsList));
-                            Console.Clear();
-                            if (employees.Count > 0)
-                            {
-                                Console.WriteLine("Форматирование завершено успешно\n");
-                                Console.WriteLine("Запущен процесс добавления данных в базу, пожалуйста, подождите..");
-                                int[] info = await Task.Run(() => AddOrChangeEmployee(employees));
-                                Console.Clear();
-                                Console.WriteLine("Результат:");
-                                Console.WriteLine($"Добавлено:{info[0]} записей");
-                                Console.WriteLine($"Изменено:{info[1]} записей");
-                            }
-                        }
-                        break;
-                }
-            }
-            else
-                Session.badStrings.Add("Ошибка: Очистка пробелов вернула пустой лист");
-            if (Session.badStrings.Count != 0)
-            {
-                Console.WriteLine("Внимание, в ходе выполнения операции Импорт произошли следующие ошибки:\n");
-                foreach (var badStroke in Session.badStrings)
-                {
-                    Console.WriteLine(badStroke);
-                }
-            }
-            Session.badStrings = new();
-            Console.WriteLine("\nНажмите любую клавишу чтобы вернуться в меню..");
-        }
-        public static List<string> SelectFile()
-        {
-            List<string> fileStringsList = new();
-            Console.WriteLine("Введите название файла:");
-            string filename = Console.ReadLine();
-            //string filename = "departments"; //departments employees jobtitle
-            try
-            {
-                StreamReader sr = new($"{filename}.tsv");
-                sr.ReadLine();
+                            return null;
 
-                //Чтение из файла
-                while (!sr.EndOfStream)
-                {
-                    fileStringsList.Add(sr.ReadLine());
-                }
-                if (fileStringsList.Count == 0)
-                {
-                    Console.Clear();
-                    Console.WriteLine("Ошибка: Файл пустой");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.Clear();
-                Console.WriteLine($"Ошибка: {ex.Message}");
-            }
-            return fileStringsList;
-        }
-        //Функция добавления в базу данных для таблицы Employees
-        static int[] AddOrChangeEmployee(List<Employee> employees)
-        {
-            int amountAdded = 0;
-            int amountChanged = 0;
-            try
-            {
-                List<Employee> dbEmployees = Session.Context.Employees.ToList();
-                foreach (var employee in employees)
-                {
-                    try
-                    {
-                        if (dbEmployees.Select(x => x.Fullname.ToUpper()).Contains(employee.Fullname.ToUpper()))
-                        {
-                            Session.Context.Employees.Where(x => x.Fullname.ToUpper() == employee.Fullname.ToUpper()).FirstOrDefault().IdDepartment = employee.IdDepartment;
-                            Session.Context.Employees.Where(x => x.Fullname.ToUpper() == employee.Fullname.ToUpper()).FirstOrDefault().Login = employee.Login;
-                            Session.Context.Employees.Where(x => x.Fullname.ToUpper() == employee.Fullname.ToUpper()).FirstOrDefault().Password = employee.Password;
-                            Session.Context.Employees.Where(x => x.Fullname.ToUpper() == employee.Fullname.ToUpper()).FirstOrDefault().IdPosition = employee.IdPosition;
-                            amountChanged++;
-                        }
-                        else
-                        {
-                            Session.Context.Employees.Add(employee);
-                            amountAdded++;
-                        }
-                        Session.Context.SaveChanges();
-                    }
-                    catch (Exception ex)
-                    {
-                        Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {employee.IdDepartment},{employee.Fullname},{employee.Login}..)");
-                    }
-                }
+                        if (DepartmentsDict.ContainsKey(data[0].ToLower()))
+                            parsedIdDepartment = DepartmentsDict[data[0].ToLower()].IdDepartment;
 
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка {ex.Message}");
-            }
-            int[] info = new int[2];
-            info[0] = amountAdded;
-            info[1] = amountChanged;
-            return info;
-        }
-
-        //Функция добавления в базу данных для таблицы Departments
-        static int[] AddOrChangeDepartment(List<Department> departments)
-        {
-            int amountAdded = 0;
-            int amountChanged = 0;
-            try
-            {
-                List<Department> dbDepartments = Session.Context.Departments.ToList();
-                foreach (var department in departments)
-                {
-                    try
-                    {
-                        if (dbDepartments.Select(x => x.Title.ToUpper()).Contains(department.Title.ToUpper()))
+                        return new Employee
                         {
-                            Session.Context.Departments.Where(x => x.Title.ToUpper() == department.Title.ToUpper()).FirstOrDefault().IdParentDepartment = department.IdParentDepartment;
-                            Session.Context.Departments.Where(x => x.Title.ToUpper() == department.Title.ToUpper()).FirstOrDefault().IdDirector = department.IdDirector;
-                            Session.Context.Departments.Where(x => x.Title.ToUpper() == department.Title.ToUpper()).FirstOrDefault().Phone = department.Phone;
-                            amountChanged++;
-                        }
-                        else
-                        {
-                            Session.Context.Departments.Add(new Department
-                            {
-                                Title = department.Title,
-                                IdParentDepartment = department.IdParentDepartment,
-                                IdDirector = department.IdDirector,
-                                Phone = department.Phone
-                            });
-                            amountAdded++;
-                        }
-                        Session.Context.SaveChanges();
+                            IdDepartment = parsedIdDepartment,
+                            Fullname = data[1],
+                            Login = data[2],
+                            Password = data[3],
+                            IdPosition = int.Parse(data[4])
+                        };
                     }
-                    catch (Exception ex)
+                case TABLE_P:
                     {
-                        Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {department.Title},{department.IdParentDepartment},{department.IdDirector},{department.Phone})");
+                        return new Position { Title = data[0] };
                     }
-                }
             }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка {ex.Message}");
-            }
-            int[] info = new int[2];
-            info[0] = amountAdded;
-            info[1] = amountChanged;
-            return info;
-        }
-
-        //Функция добавления в базу данных для таблицы Positions
-        static int AddOrChangePosition(List<Position> positions)
-        {
-            int amountAdded = 0;
-            try
-            {
-                List<Position> dbPositions = Session.Context.Positions.ToList();
-                foreach (var position in positions)
-                {
-                    try
-                    {
-                        if (!dbPositions.Select(x => x.Title.ToUpper()).Contains(position.Title.ToUpper()))
-                        {
-                            Session.Context.Positions.Add(position);
-                            amountAdded++;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {position.Title})");
-                    }
-                    Session.Context.SaveChanges();
-                }
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка {ex.Message}");
-            }
-            return amountAdded;
-        }
-
-        //Функция заменяет слова на Id для таблицы Employees
-        static List<string> ReplaceWordsEmployees(List<string> treatedStringsList)
-        {
-            List<string> formatedStringList = new();
-            try
-            {
-                List<Position> positions = Session.Context.Positions.ToList();
-                List<Department> departments = Session.Context.Departments.ToList();
-                foreach (var stroke in treatedStringsList)
-                {
-                    string temp = stroke;
-                    string[] words = temp.Split('\t');
-                    try
-                    {
-                        if (departments.Select(x => x.Title.ToUpper()).Contains(words.First().ToUpper()))
-                        {
-                            int idDepartment = departments.Where(x => x.Title.ToUpper() == words.First().ToUpper()).Select(x => x.IdDepartment).FirstOrDefault();
-                            temp = temp.Replace(words[0], idDepartment.ToString());
-                        }
-                        if (positions.Select(x => x.Title.ToUpper()).Contains(words.Last().ToUpper()))
-                        {
-                            int idPosition = positions.Where(x => x.Title.ToUpper() == words.Last().ToUpper()).Select(x => x.IdPosition).FirstOrDefault();
-                            temp = temp.Replace(words[4], idPosition.ToString());
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                    }
-                    formatedStringList.Add(temp);
-                }
-                return formatedStringList;
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка: {ex.Message}");
-                return new List<string>();
-            }
-        }
-        //Функция заменяет слова на Id для таблицы Departments
-        static List<string> ReplaceWordsDepartments(List<string> treatedStringsList)
-        {
-            List<string> formatedStringList = new();
-            try
-            {
-                List<Department> departments = Session.Context.Departments.ToList();
-                List<Employee> employees = Session.Context.Employees.ToList();
-                foreach (var stroke in treatedStringsList)
-                {
-                    string temp = stroke;
-                    string[] words = temp.Split('\t');
-                    try
-                    {
-                        if (departments.Select(x => x.Title.ToUpper()).Contains(words[1].ToUpper()))
-                        {
-                            int idDepartment = departments.Where(x => x.Title.ToUpper() == words[1].ToUpper()).Select(x => x.IdDepartment).FirstOrDefault();
-                            temp = temp.Replace(words[1], idDepartment.ToString());
-                        }
-                        if (employees.Select(x => x.Fullname.ToUpper()).Contains(words[2].ToUpper()))
-                        {
-                            int idDirector = employees.Where(x => x.Fullname.ToUpper() == words[2].ToUpper()).Select(x => x.IdEmployee).FirstOrDefault();
-                            temp = temp.Replace(words[2], idDirector.ToString());
-                        }
-                        formatedStringList.Add(temp);
-                    }
-                    catch (Exception ex)
-                    {
-                        Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                    }
-                }
-                return formatedStringList;
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка: {ex.Message}");
-                return new List<string>();
-            }
-        }
-        //Функция проверяет данные на формат для таблицы Employees
-        static List<Employee> CheckFormatToEmployees(List<string> treatedStringsList)
-        {
-            try
-            {
-                int amountProp = 0;
-                Type type = typeof(Employee);
-                PropertyInfo[] propertiesEmployee = type.GetProperties();
-                foreach (var prop in propertiesEmployee)
-                {
-                    if (prop.GetGetMethod() != null && !prop.GetSetMethod().IsVirtual)
-                    {
-                        amountProp++;
-                    }
-                }
-                amountProp--;
-                List<Employee> employees = new();
-                foreach (var stroke in treatedStringsList)
-                {
-                    string[] words = stroke.Split('\t');
-                    if (words.Length == amountProp)
-                    {
-                        if (words[0] == "0")
-                        {
-                            try
-                            {
-                                employees.Add(new Employee
-                                {
-                                    IdDepartment = null,
-                                    Fullname = words[1],
-                                    Login = words[2],
-                                    Password = words[3],
-                                    IdPosition = int.Parse(words[4])
-                                });
-                            }
-                            catch (Exception ex)
-                            {
-                                Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                            }
-                        }
-                        else
-                        {
-                            try
-                            {
-                                employees.Add(new Employee
-                                {
-                                    IdDepartment = int.Parse(words[0]),
-                                    Fullname = words[1],
-                                    Login = words[2],
-                                    Password = words[3],
-                                    IdPosition = int.Parse(words[4])
-                                });
-                            }
-                            catch (Exception ex)
-                            {
-                                Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                            }
-                        }
-                    }
-                    else
-                        Session.badStrings.Add($"Ошибка: Строка имеет неверный формат\n(строка: {stroke})");
-                }
-                return employees;
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка: {ex.Message}");
-                return new List<Employee>();
-            }
-        }
-        //Функция проверяет данные на формат для таблицы Departments
-        static List<Department> CheckFormatToDepartments(List<string> treatedStringsList)
-        {
-            try
-            {
-                int amountProp = 0;
-                Type type = typeof(Department);
-                PropertyInfo[] propertiesDepartment = type.GetProperties();
-                foreach (var prop in propertiesDepartment)
-                {
-                    if (prop.GetGetMethod() != null && !prop.GetSetMethod().IsVirtual)
-                    {
-                        amountProp++;
-                    }
-                }
-                amountProp--;
-                List<Department> departments = new();
-                foreach (var stroke in treatedStringsList)
-                {
-                    string[] words = stroke.Split('\t');
-                    if (Regex.IsMatch(words.Last(), @"\d+")) //Если последнее слово содержит цифры
-                    {
-                        for (int i = 0; i < words.Length; i++)
-                        {
-                            if (words[i] == "0")
-                                words[i] = null;
-                        }
-
-                        if (words.Length == amountProp)
-                        {
-                            if (words[1] == null)
-                            {
-                                try
-                                {
-                                    departments.Add(new Department
-                                    {
-                                        Title = words[0],
-                                        IdParentDepartment = null,
-                                        IdDirector = ToNullableInt(words[2]),
-                                        Phone = words[3]
-                                    });
-                                }
-                                catch (Exception ex)
-                                {
-                                    Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                                }
-                            }
-                            else
-                            {
-                                try
-                                {
-                                    departments.Add(new Department
-                                    {
-                                        Title = words[0],
-                                        IdParentDepartment = int.Parse(words[1]),
-                                        IdDirector = int.Parse(words[2]),
-                                        Phone = words[3]
-                                    });
-                                }
-                                catch
-                                {
-                                    try
-                                    {
-                                        departments.Add(new Department
-                                        {
-                                            Title = words[0],
-                                            IdParentDepartment = int.Parse(words[1]),
-                                            IdDirector = null,
-                                            Phone = words[3]
-                                        });
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                                    }
-                                }
-                            }
-                        }
-                        else
-                            Session.badStrings.Add($"Ошибка: Строка имеет неверный формат\n(строка: {stroke})");
-                    }
-                    else
-                        Session.badStrings.Add($"Ошибка: Строка имеет неверный формат\n(строка: {stroke})");
-                }
-                return departments;
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка: {ex.Message}");
-                return new List<Department>();
-            }
-        }
-        static int? ToNullableInt(this string s)
-        {
-            if (int.TryParse(s, out int i)) return i;
             return null;
         }
-        //Функция проверяет данные на формат для таблицы Positions
-        static List<Position> CheckFormatToPositions(List<string> treatedStringsList)
+        private static void UpdateOrAddDBData(object data, string type, UnkCompanyDBContext dBContext)
         {
-            //Используя рефлекшн, подсчитаем количество свойств у класса
-            int amountProp = 0;
-            Type type = typeof(Position);
-            PropertyInfo[] propertiesPosition = type.GetProperties();
-            foreach (var prop in propertiesPosition)
+            switch (type)
             {
-                if (prop.GetGetMethod() != null && !prop.GetSetMethod().IsVirtual)
-                {
-                    amountProp++;
-                }
-            }
-            amountProp--; //Вычитаем 1 свойство, т.к. это ID, а он AutoIncrement
-            try
-            {
-                List<Position> positions = new();
-                foreach (var stroke in treatedStringsList)
-                {
-                    string[] words = stroke.Split('\t');
-                    if (words.Length == amountProp)
-                        try
-                        {
-                            positions.Add(new Position { Title = words[0] });
-                        }
-                        catch (Exception ex)
-                        {
-                            Session.badStrings.Add($"Ошибка: {ex.Message}\n(строка: {stroke})");
-                        }
-                    else
-                        Session.badStrings.Add($"Ошибка: Строка имеет неверный формат\n(строка: {stroke})");
-                }
-                return positions;
-            }
-            catch (Exception ex)
-            {
-                Session.badStrings.Add($"Ошибка: {ex.Message}");
-                return new List<Position>();
-            }
-        }
-        //Функция убирает лишние пустоты в строках
-        static List<string> RemoveSpaces(List<string> rawList)
-        {
-            List<string> treatedStringsList = new();
-            foreach (var stroke in rawList)
-            {
-                if (!String.IsNullOrWhiteSpace(stroke))
-                {
-                    string temp = stroke;
-                    int indexNextTab = temp.IndexOf('\t');
-                    string treatedStroke = String.Empty;
-                    while (indexNextTab >= 0)
+                case TABLE_D:
                     {
-                        string word;
-                        if (indexNextTab != 0)
+                        List<Department> contextDepartments = dBContext.Departments.ToList();
+                        Department departmentFromData = data as Department;
+
+                        if (contextDepartments.Any(x =>
+                            x.Title.ToLower() == departmentFromData.Title.ToLower() &&
+                            x.IdParentDepartment == departmentFromData.IdParentDepartment))
                         {
-                            word = temp.Substring(0, indexNextTab);
-                            word = $"{Regex.Replace(word.Trim(), @"\s+", " ")}";
-                            temp = temp.Remove(0, indexNextTab + 1);
+                            Department contextDepartment = contextDepartments.
+                                FirstOrDefault(x => x.Title.ToLower() == departmentFromData.Title.ToLower() &&
+                                x.IdParentDepartment == departmentFromData.IdParentDepartment);
+
+                            if (contextDepartment.Phone != departmentFromData.Phone)
+                                contextDepartment.Phone = departmentFromData.Phone;
+
+                            else if (contextDepartment.IdDirector != departmentFromData.IdDirector)
+                                contextDepartment.IdDirector = departmentFromData.IdDirector;
                         }
                         else
-                        {
-                            word = "0";
-                            temp = temp.Remove(0, 1);
-                        }
-                        treatedStroke += $"{word}\t";
-                        indexNextTab = temp.IndexOf('\t');
+                            dBContext.Departments.Add(departmentFromData);
+                        break;
                     }
-                    temp = $"{Regex.Replace(temp, @"\s+", " ")}";
-                    treatedStroke += $"{temp}";
-                    treatedStringsList.Add(treatedStroke);
-                }
+                case TABLE_E:
+                    {
+                        List<Employee> contextEmployees = dBContext.Employees.ToList();
+                        Employee employeeFromData = data as Employee;
+
+                        if (contextEmployees.Any(x => x.Fullname.ToLower() == employeeFromData.Fullname.ToLower()))
+                        {
+                            Employee contextEmployee = contextEmployees.
+                                FirstOrDefault(x => x.Fullname.ToLower() == employeeFromData.Fullname.ToLower());
+
+                            if (contextEmployee.IdDepartment != employeeFromData.IdDepartment)
+                                contextEmployee.IdDepartment = employeeFromData.IdDepartment;
+
+                            if (contextEmployee.Login != employeeFromData.Login)
+                                contextEmployee.Login = employeeFromData.Login;
+
+                            if (contextEmployee.Password != employeeFromData.Password)
+                                contextEmployee.Password = employeeFromData.Password;
+
+                            if (contextEmployee.IdPosition != employeeFromData.IdPosition)
+                                contextEmployee.IdPosition = employeeFromData.IdPosition;
+                        }
+                        else
+                            dBContext.Employees.Add(employeeFromData);
+                        break;
+                    }
+                case TABLE_P:
+                    {
+                        List<Position> contextPositions = dBContext.Positions.ToList();
+                        Position positionFromData = data as Position;
+
+                        if (!contextPositions.Any(x => x.Title.ToLower() == positionFromData.Title.ToLower()))
+                            dBContext.Positions.Add(new Position { Title = positionFromData.Title });
+                        break;
+                    }
+                default:
+                    throw new ArgumentOutOfRangeException(type);
             }
-            return treatedStringsList;
         }
+        #endregion
+        #region Display methods
+        public static void DisplayDepartments(UnkCompanyDBContext dBContext)
+        {
+            dBContext.Employees.Load();
+            List<Department> departments = dBContext.Departments.ToList();
+            var changesDepartment = dBContext.ChangeTracker.Entries<Department>();
+
+            var modifiedDepartmentsDict = changesDepartment.
+                Where(x => x.State == EntityState.Modified).
+                Select(x => x.Entity).ToDictionary(x => x.IdDepartment);
+
+            var addedDepartments = changesDepartment.
+                Where(x => x.State == EntityState.Added).
+                Select(x => x.Entity).ToList();
+
+            string displayFormat = "{0,-5} {1,-20} {2,-20} {3,-30} {4,-20}";
+            Console.WriteLine("\nТаблица Подразделения");
+            Console.WriteLine(displayFormat, "ID", "Название", "Родитель", "Директор", "Телефон");
+            foreach (Department department in departments)
+            {
+                string parent = "NULL";
+                if (department.IdParentDepartmentNavigation is not null)
+                    parent = department.IdParentDepartmentNavigation.Title;
+
+                string director = "NULL";
+                if (department.IdDirectorNavigation is not null)
+                    director = department.IdDirectorNavigation.Fullname;
+
+                if (modifiedDepartmentsDict.ContainsKey(department.IdDepartment))
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+
+                Console.WriteLine(displayFormat, department.IdDepartment,
+                    department.Title, parent, director, department.Phone);
+                Console.ForegroundColor = ConsoleColor.Gray;
+            }
+            Console.ForegroundColor = ConsoleColor.Green;
+            foreach (Department addedDepartment in addedDepartments)
+            {
+                string parent = "NULL";
+                if (addedDepartment.IdParentDepartmentNavigation is not null)
+                    parent = addedDepartment.IdParentDepartmentNavigation.Title;
+
+                string director = "NULL";
+                if (addedDepartment.IdDirectorNavigation is not null)
+                    director = addedDepartment.IdDirectorNavigation.Fullname;
+
+                Console.WriteLine(displayFormat, addedDepartment.IdDepartment,
+                    addedDepartment.Title, parent, director, addedDepartment.Phone);
+            }
+            Console.ForegroundColor = ConsoleColor.Gray;
+        }
+        public static void DisplayEmployees(UnkCompanyDBContext dBContext)
+        {
+            dBContext.Departments.Load();
+            dBContext.Positions.Load();
+            List<Employee> employees = dBContext.Employees.ToList();
+
+            var changesEmployee = dBContext.ChangeTracker.Entries<Employee>();
+            var modifiedEmployeesDict = changesEmployee.
+                Where(x => x.State == EntityState.Modified).
+                Select(x => x.Entity).ToDictionary(x => x.IdEmployee);
+
+            var addedEmployees = changesEmployee.
+                Where(x => x.State == EntityState.Added).
+                Select(x => x.Entity).ToList();
+
+            string displayFormat = "{0,-5} {1,-20} {2,-30} {3,-10} {4,-20} {5, -20}";
+            Console.WriteLine("\nТаблица Сотрудники");
+            Console.WriteLine(displayFormat, "ID", "Подразделение", "ФИО", "Логин", "Пароль", "Должность");
+            foreach (Employee employee in employees)
+            {
+                string department = "NULL";
+                if (employee.IdDepartmentNavigation is not null)
+                    department = employee.IdDepartmentNavigation.Title;
+
+                string position = "NULL";
+                if (employee.IdPositionNavigation is not null)
+                    position = employee.IdPositionNavigation.Title;
+
+                if (modifiedEmployeesDict.ContainsKey(employee.IdEmployee))
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+
+                Console.WriteLine(displayFormat,
+                    employee.IdEmployee, department, employee.Fullname,
+                    employee.Login, employee.Password, position);
+                Console.ForegroundColor = ConsoleColor.Gray;
+            }
+            Console.ForegroundColor = ConsoleColor.Green;
+            foreach (Employee addedEmployee in addedEmployees)
+            {
+                string department = "NULL";
+                if (addedEmployee.IdDepartmentNavigation is not null)
+                    department = addedEmployee.IdDepartmentNavigation.Title;
+
+                string position = "NULL";
+                if (addedEmployee.IdPositionNavigation is not null)
+                    position = addedEmployee.IdPositionNavigation.Title;
+
+                Console.WriteLine(displayFormat,
+                    addedEmployee.IdEmployee, department, addedEmployee.Fullname,
+                    addedEmployee.Login, addedEmployee.Password, position);
+            }
+            Console.ForegroundColor = ConsoleColor.Gray;
+        }
+        public static void DisplayPositions(UnkCompanyDBContext dBContext)
+        {
+            List<Position> positions = dBContext.Positions.ToList();
+
+            var changesPosition = dBContext.ChangeTracker.Entries();
+            var addedPositions = changesPosition.
+                Where(x => x.State == EntityState.Added).
+                Select(x => x.Entity).ToList();
+
+            string displayFormat = "{0,-5} {1,-20}";
+            Console.WriteLine("\nТаблица Должности");
+            Console.WriteLine(displayFormat, "ID", "Название");
+            foreach (Position position in positions)
+            {
+                Console.WriteLine(displayFormat, position.IdPosition, position.Title);
+            }
+            Console.ForegroundColor = ConsoleColor.Green;
+            foreach (Position addedPosition in addedPositions)
+            {
+                Console.WriteLine(displayFormat, addedPosition.IdPosition, addedPosition.Title);
+            }
+            Console.ForegroundColor = ConsoleColor.Gray;
+        }
+        public static void DisplayDepartmentsAsHierarchy()
+        {
+
+        }
+        #endregion
     }
 }
