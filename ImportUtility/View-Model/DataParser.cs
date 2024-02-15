@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 
 namespace ImportUtility.View_Model
 {
-    public class ImportFunctions
+    public class DataParser
     {
         #region Constants
         private const string TABLE_D = "d";

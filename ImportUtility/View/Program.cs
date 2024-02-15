@@ -175,7 +175,7 @@ namespace ImportUtility
                                 {
                                     try
                                     {
-                                        ImportFunctions.Import(args[1], args[2]);
+                                        DataParser.Import(args[1], args[2]);
                                     }
                                     catch (FileNotFoundException ex)
                                     {
