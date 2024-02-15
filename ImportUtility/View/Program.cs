@@ -14,9 +14,6 @@ namespace ImportUtility
         private const string HELP = "help";
         private const string IMPORT = "import";
         private const string OUTPUT = "output";
-        private const string TABLE_D = "d";
-        private const string TABLE_E = "e";
-        private const string TABLE_P = "p";
         #endregion
         static void Main(string[] args)
         {
@@ -80,6 +77,11 @@ namespace ImportUtility
                                             {
                                                 Console.WriteLine($"\nКоманда `{CLEAR}`:\n");
                                                 Console.WriteLine("\t{0,-15} Очистить консоль", "<>");
+                                                break;
+                                            }
+                                        default:
+                                            {
+                                                Console.WriteLine($"Неизвестная команда `{args[1]}`.\nВведите `help` для получения информации о доступных командах.");
                                                 break;
                                             }
                                     }
@@ -149,14 +151,36 @@ namespace ImportUtility
                         {
                             case 1:
                                 {
-                                    //Вывод иерархии подразделений
-                                    //Output()
+                                    try
+                                    {
+                                        DataParser.DisplayDepartmentsAsHierarchy();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine("\nОшибка:");
+                                        Console.WriteLine(ex.Message);
+                                    }
                                     break;
                                 }
                             case 2:
                                 {
-                                    //Вывод иерархии подразделений подразделения
-                                    //Output(id)
+                                    try
+                                    {
+                                        DataParser.DisplayDepartmentsAsHierarchy(args[1]);
+                                    }
+                                    catch (FormatException ex)
+                                    {
+                                        Console.WriteLine($"\nВведенные данные неккоректны. {ex.Message}");
+                                    }
+                                    catch (ArgumentException ex)
+                                    {
+                                        Console.WriteLine($"\n{ex.Message}");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine("\nОшибка:");
+                                        Console.WriteLine(ex.Message);
+                                    }
                                     break;
                                 }
                             default:
@@ -175,7 +199,7 @@ namespace ImportUtility
                                 {
                                     try
                                     {
-                                        DataParser.Import(args[1], args[2]);
+                                        DataParser.ParseDataFromFile(args[1], args[2]);
                                     }
                                     catch (FileNotFoundException ex)
                                     {
