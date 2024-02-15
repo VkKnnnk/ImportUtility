@@ -29,12 +29,14 @@ namespace ImportUtility.View_Model
         {
             string parsePattern;
             string groupPattern;
-
+            List<string> parseFails = new();
+            List<string> mapFails = new();
             if (!File.Exists(filename))
                 throw new FileNotFoundException($"Файла `{filename}` не существует");
 
-            using (UnkCompanyDBContext dBContext = new UnkCompanyDBContext())
+            using (UnkCompanyDBContext dBContext = new())
             {
+
                 if (!dBContext.Database.CanConnect())
                     throw new Exception("Отсутствует подключение к базе данных");
 
@@ -46,7 +48,7 @@ namespace ImportUtility.View_Model
                             EmployeesDict = dBContext.Employees.ToDictionary(x => x.Fullname.ToLower());
 
                             groupPattern = "$1\t$2\t$3\t$4";
-                            parsePattern = @"(\S[-\w ]+\S) *\t *([-\w ]+\S)? *\t *([-\w ]+\S)? *\t *([-\d ()]+\S)";
+                            parsePattern = @"^\s*(\S[-\w ]+\S) *\t *([-\w ]+\S)? *\t *([-\w ]+\S)? *\t *([-\d ()]+\S)\s*$";
                             break;
                         }
                     case TABLE_E:
@@ -55,20 +57,20 @@ namespace ImportUtility.View_Model
                             PositionsDict = dBContext.Positions.ToDictionary(x => x.Title.ToLower());
 
                             groupPattern = "$1\t$2\t$3\t$4\t$5";
-                            parsePattern = @"(\S[-\w ]+\S)? *\t *([-\w ]+\S) *\t *([^\t]+) *\t *([^\t]+) *\t *([-\w ]+\S)";
+                            parsePattern = @"^\s*(\S[-\w ]+\S)? *\t *([-\w ]+\S) *\t *([^\t]+) *\t *([^\t]+) *\t *([-\w ]+\S)\s*$";
                             break;
                         }
                     case TABLE_P:
                         {
                             groupPattern = "$1";
-                            parsePattern = @"(\S[-\w ]+\S)";
+                            parsePattern = @"^\s*(\S[-\w ]+\S)\s*$";
                             break;
                         }
                     default:
                         throw new ArgumentOutOfRangeException(type);
                 }
 
-                using (FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read))
+                using (FileStream fs = new(filename, FileMode.Open, FileAccess.Read))
                 {
                     using (StreamReader sr = new(fs))
                     {
@@ -81,7 +83,10 @@ namespace ImportUtility.View_Model
 
                             Match parseMatch = Regex.Match(data, parsePattern);
                             if (!parseMatch.Success)
+                            {
+                                parseFails.Add(data);
                                 continue;
+                            }
 
                             string[] parsedData = Regex.Replace(
                                 Regex.Replace(parseMatch.Value, parsePattern, groupPattern),
@@ -89,16 +94,44 @@ namespace ImportUtility.View_Model
 
                             object mappedData = MapDataToIds(parsedData, type);
                             if (mappedData is null)
+                            {
+                                mapFails.Add(data);
                                 continue;
+                            }
 
                             UpdateOrAddDBData(mappedData, type, dBContext);
                         }
                     }
                 }
-                DisplayDepartments(dBContext);
-                DisplayEmployees(dBContext);
-                DisplayPositions(dBContext);
+                Console.ForegroundColor = ConsoleColor.DarkRed;
+                foreach (var data in parseFails)
+                    Console.WriteLine(data);
+                Console.ForegroundColor = ConsoleColor.Gray;
 
+                if (parseFails.Count != 0)
+                {
+                    Console.WriteLine();
+                    Console.Write("Нераспознанно строк: ");
+                    Console.ForegroundColor = ConsoleColor.DarkRed;
+                    Console.Write(parseFails.Count);
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                }
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                foreach (var data in mapFails)
+                    Console.WriteLine(data);
+                Console.ForegroundColor = ConsoleColor.Gray;
+
+                if (mapFails.Count != 0)
+                {
+                    Console.WriteLine();
+                    Console.Write("Недопустимых строк: ");
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.Write(mapFails.Count);
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                }
+
+                DisplayChangesAndData(dBContext);
                 dBContext.SaveChanges();
             }
         }
@@ -130,6 +163,7 @@ namespace ImportUtility.View_Model
                     }
                 case TABLE_E:
                     {
+
                         int? parsedIdDepartment = null;
                         if (PositionsDict.ContainsKey(data[4].ToLower()))
                             data[4] = PositionsDict[data[4].ToLower()].IdPosition.ToString();
@@ -175,7 +209,7 @@ namespace ImportUtility.View_Model
                             if (contextDepartment.Phone != departmentFromData.Phone)
                                 contextDepartment.Phone = departmentFromData.Phone;
 
-                            else if (contextDepartment.IdDirector != departmentFromData.IdDirector)
+                            if (contextDepartment.IdDirector != departmentFromData.IdDirector)
                                 contextDepartment.IdDirector = departmentFromData.IdDirector;
                         }
                         else
@@ -223,6 +257,30 @@ namespace ImportUtility.View_Model
         }
         #endregion
         #region Display methods
+        private static void DisplayChangesAndData(UnkCompanyDBContext dBContext)
+        {
+            int added = dBContext.ChangeTracker.Entries().Where(x => x.State == EntityState.Added).Count();
+            int modified = dBContext.ChangeTracker.Entries().Where(x => x.State == EntityState.Modified).Count();
+
+            Console.WriteLine();
+            Console.Write("Добавлено: ");
+            if (added != 0)
+                Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write(added);
+            Console.ForegroundColor = ConsoleColor.Gray;
+
+            Console.WriteLine();
+            Console.Write("Изменено: ");
+            if (modified != 0)
+                Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(modified);
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine();
+
+            DisplayDepartments(dBContext);
+            DisplayEmployees(dBContext);
+            DisplayPositions(dBContext);
+        }
         public static void DisplayDepartments(UnkCompanyDBContext dBContext)
         {
             dBContext.Employees.Load();
@@ -239,39 +297,44 @@ namespace ImportUtility.View_Model
 
             string displayFormat = "{0,-5} {1,-20} {2,-20} {3,-30} {4,-20}";
             Console.WriteLine("\nТаблица Подразделения");
-            Console.WriteLine(displayFormat, "ID", "Название", "Родитель", "Директор", "Телефон");
-            foreach (Department department in departments)
+            if (departments.Count != 0 || addedDepartments.Count != 0)
             {
-                string parent = "NULL";
-                if (department.IdParentDepartmentNavigation is not null)
-                    parent = department.IdParentDepartmentNavigation.Title;
+                Console.WriteLine(displayFormat, "ID", "Название", "Родитель", "Директор", "Телефон");
+                foreach (Department department in departments)
+                {
+                    string parent = "NULL";
+                    if (department.IdParentDepartmentNavigation is not null)
+                        parent = department.IdParentDepartmentNavigation.Title;
 
-                string director = "NULL";
-                if (department.IdDirectorNavigation is not null)
-                    director = department.IdDirectorNavigation.Fullname;
+                    string director = "NULL";
+                    if (department.IdDirectorNavigation is not null)
+                        director = department.IdDirectorNavigation.Fullname;
 
-                if (modifiedDepartmentsDict.ContainsKey(department.IdDepartment))
-                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    if (modifiedDepartmentsDict.ContainsKey(department.IdDepartment))
+                        Console.ForegroundColor = ConsoleColor.Yellow;
 
-                Console.WriteLine(displayFormat, department.IdDepartment,
-                    department.Title, parent, director, department.Phone);
+                    Console.WriteLine(displayFormat, department.IdDepartment,
+                        department.Title, parent, director, department.Phone);
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                }
+                Console.ForegroundColor = ConsoleColor.Green;
+                foreach (Department addedDepartment in addedDepartments)
+                {
+                    string parent = "NULL";
+                    if (addedDepartment.IdParentDepartmentNavigation is not null)
+                        parent = addedDepartment.IdParentDepartmentNavigation.Title;
+
+                    string director = "NULL";
+                    if (addedDepartment.IdDirectorNavigation is not null)
+                        director = addedDepartment.IdDirectorNavigation.Fullname;
+
+                    Console.WriteLine(displayFormat, addedDepartment.IdDepartment,
+                        addedDepartment.Title, parent, director, addedDepartment.Phone);
+                }
                 Console.ForegroundColor = ConsoleColor.Gray;
             }
-            Console.ForegroundColor = ConsoleColor.Green;
-            foreach (Department addedDepartment in addedDepartments)
-            {
-                string parent = "NULL";
-                if (addedDepartment.IdParentDepartmentNavigation is not null)
-                    parent = addedDepartment.IdParentDepartmentNavigation.Title;
-
-                string director = "NULL";
-                if (addedDepartment.IdDirectorNavigation is not null)
-                    director = addedDepartment.IdDirectorNavigation.Fullname;
-
-                Console.WriteLine(displayFormat, addedDepartment.IdDepartment,
-                    addedDepartment.Title, parent, director, addedDepartment.Phone);
-            }
-            Console.ForegroundColor = ConsoleColor.Gray;
+            else
+                Console.WriteLine("Данные отсутствуют");
         }
         public static void DisplayEmployees(UnkCompanyDBContext dBContext)
         {
@@ -290,68 +353,177 @@ namespace ImportUtility.View_Model
 
             string displayFormat = "{0,-5} {1,-20} {2,-30} {3,-10} {4,-20} {5, -20}";
             Console.WriteLine("\nТаблица Сотрудники");
-            Console.WriteLine(displayFormat, "ID", "Подразделение", "ФИО", "Логин", "Пароль", "Должность");
-            foreach (Employee employee in employees)
+            if (employees.Count != 0 || addedEmployees.Count != 0)
             {
-                string department = "NULL";
-                if (employee.IdDepartmentNavigation is not null)
-                    department = employee.IdDepartmentNavigation.Title;
+                Console.WriteLine(displayFormat, "ID", "Подразделение", "ФИО", "Логин", "Пароль", "Должность");
+                foreach (Employee employee in employees)
+                {
+                    string department = "NULL";
+                    if (employee.IdDepartmentNavigation is not null)
+                        department = employee.IdDepartmentNavigation.Title;
 
-                string position = "NULL";
-                if (employee.IdPositionNavigation is not null)
-                    position = employee.IdPositionNavigation.Title;
+                    string position = "NULL";
+                    if (employee.IdPositionNavigation is not null)
+                        position = employee.IdPositionNavigation.Title;
 
-                if (modifiedEmployeesDict.ContainsKey(employee.IdEmployee))
-                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    if (modifiedEmployeesDict.ContainsKey(employee.IdEmployee))
+                        Console.ForegroundColor = ConsoleColor.Yellow;
 
-                Console.WriteLine(displayFormat,
-                    employee.IdEmployee, department, employee.Fullname,
-                    employee.Login, employee.Password, position);
+                    Console.WriteLine(displayFormat,
+                        employee.IdEmployee, department, employee.Fullname,
+                        employee.Login, employee.Password, position);
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                }
+                Console.ForegroundColor = ConsoleColor.Green;
+                foreach (Employee addedEmployee in addedEmployees)
+                {
+                    string department = "NULL";
+                    if (addedEmployee.IdDepartmentNavigation is not null)
+                        department = addedEmployee.IdDepartmentNavigation.Title;
+
+                    string position = "NULL";
+                    if (addedEmployee.IdPositionNavigation is not null)
+                        position = addedEmployee.IdPositionNavigation.Title;
+
+                    Console.WriteLine(displayFormat,
+                        addedEmployee.IdEmployee, department, addedEmployee.Fullname,
+                        addedEmployee.Login, addedEmployee.Password, position);
+                }
                 Console.ForegroundColor = ConsoleColor.Gray;
             }
-            Console.ForegroundColor = ConsoleColor.Green;
-            foreach (Employee addedEmployee in addedEmployees)
-            {
-                string department = "NULL";
-                if (addedEmployee.IdDepartmentNavigation is not null)
-                    department = addedEmployee.IdDepartmentNavigation.Title;
-
-                string position = "NULL";
-                if (addedEmployee.IdPositionNavigation is not null)
-                    position = addedEmployee.IdPositionNavigation.Title;
-
-                Console.WriteLine(displayFormat,
-                    addedEmployee.IdEmployee, department, addedEmployee.Fullname,
-                    addedEmployee.Login, addedEmployee.Password, position);
-            }
-            Console.ForegroundColor = ConsoleColor.Gray;
+            else
+                Console.WriteLine("Данные отсутствуют");
         }
         public static void DisplayPositions(UnkCompanyDBContext dBContext)
         {
             List<Position> positions = dBContext.Positions.ToList();
 
-            var changesPosition = dBContext.ChangeTracker.Entries();
+            var changesPosition = dBContext.ChangeTracker.Entries<Position>();
             var addedPositions = changesPosition.
                 Where(x => x.State == EntityState.Added).
                 Select(x => x.Entity).ToList();
 
             string displayFormat = "{0,-5} {1,-20}";
             Console.WriteLine("\nТаблица Должности");
-            Console.WriteLine(displayFormat, "ID", "Название");
-            foreach (Position position in positions)
+            if (positions.Count != 0 || addedPositions.Count != 0)
             {
-                Console.WriteLine(displayFormat, position.IdPosition, position.Title);
+                Console.WriteLine(displayFormat, "ID", "Название");
+                foreach (Position position in positions)
+                {
+                    Console.WriteLine(displayFormat, position.IdPosition, position.Title);
+                }
+                Console.ForegroundColor = ConsoleColor.Green;
+                foreach (Position addedPosition in addedPositions)
+                {
+                    Console.WriteLine(displayFormat, addedPosition.IdPosition, addedPosition.Title);
+                }
+                Console.ForegroundColor = ConsoleColor.Gray;
             }
-            Console.ForegroundColor = ConsoleColor.Green;
-            foreach (Position addedPosition in addedPositions)
-            {
-                Console.WriteLine(displayFormat, addedPosition.IdPosition, addedPosition.Title);
-            }
-            Console.ForegroundColor = ConsoleColor.Gray;
+            else
+                Console.WriteLine("Данные отсутствуют");
         }
         public static void DisplayDepartmentsAsHierarchy()
         {
+            static void GetChildrenDepartment(Department parentDepartment, int nestingLevel)
+            {
+                DisplayDepartmentInformation(parentDepartment, nestingLevel);
+                nestingLevel++;
+                List<Department> children = parentDepartment.InverseIdParentDepartmentNavigation
+                    .OrderBy(x => x.Title).ToList();
+                if (children.Count != 0)
+                {
+                    foreach (Department child in children)
+                    {
+                        GetChildrenDepartment(child, nestingLevel);
+                    }
+                }
+            }
+            using (UnkCompanyDBContext dBContext = new())
+            {
+                if (!dBContext.Database.CanConnect())
+                    throw new Exception("Отсутствует подключение к базе данных");
 
+                dBContext.Positions.Load();
+                dBContext.Employees.Load();
+                dBContext.Departments.Load();
+
+                List<Department> parentDepartments = dBContext.Departments
+                    .Where(x => x.IdParentDepartment == null).OrderBy(x => x.Title).ToList();
+
+                Console.WriteLine();
+                foreach (Department parentDepartment in parentDepartments)
+                    GetChildrenDepartment(parentDepartment, 1);
+            }
+        }
+        public static void DisplayDepartmentsAsHierarchy(string inputIdDepartment)
+        {
+            int GetParents(Department department, int nestingLevel, List<Department> departments)
+            {
+                if (department.IdParentDepartment is not null)
+                {
+                    Department parentDepartment = departments.
+                        FirstOrDefault(x => x.IdDepartment == department.IdParentDepartment);
+                    nestingLevel = GetParents(parentDepartment, nestingLevel, departments);
+                    for (int i = 0; i < nestingLevel; i++)
+                        Console.Write("=");
+                    Console.WriteLine($" {parentDepartment.Title} ID = {parentDepartment.IdDepartment}");
+                    nestingLevel++;
+                }
+                return nestingLevel;
+            }
+
+            using (UnkCompanyDBContext dBContext = new())
+            {
+                if (!int.TryParse(inputIdDepartment, out int idDepartment))
+                    throw new FormatException($"`{inputIdDepartment}` не является числом");
+
+                if (!dBContext.Database.CanConnect())
+                    throw new Exception("Отсутствует подключение к базе данных");
+
+                dBContext.Positions.Load();
+                dBContext.Employees.Load();
+                dBContext.Departments.Load();
+
+                List<Department> departments = dBContext.Departments.ToList();
+                if (!departments.Any(x => x.IdDepartment == idDepartment))
+                    throw new ArgumentException($"ID `{idDepartment}` не существует в таблице Departments");
+
+                Department department = departments.FirstOrDefault(x => x.IdDepartment == idDepartment);
+                int nestingLevel = GetParents(department, 1, departments);
+
+                DisplayDepartmentInformation(department, nestingLevel);
+            }
+        }
+        private static void DisplayDepartmentInformation(Department department, int nestingLevel)
+        {
+            for (int i = 0; i < nestingLevel; i++)
+            {
+                Console.Write("=");
+            }
+            Console.WriteLine($" {department.Title} ID = {department.IdDepartment}");
+            List<Employee> employees;
+            if (department.IdDirector is not null)
+            {
+                for (int i = 0; i < nestingLevel - 1; i++)
+                    Console.Write(" ");
+                Console.WriteLine($"* {department.IdDirectorNavigation.Fullname}" +
+                    $" ID = {department.IdDirector} " +
+                    $"({department.IdDirectorNavigation.IdPositionNavigation.Title} " +
+                    $"ID = {department.IdDirectorNavigation.IdPosition})");
+                employees = department.Employees.Where(x => x.IdEmployee != department.IdDirector).ToList();
+            }
+            else
+                employees = department.Employees.ToList();
+            if (employees.Count != 0)
+            {
+                foreach (Employee employee in employees)
+                {
+                    for (int i = 0; i < nestingLevel - 1; i++)
+                        Console.Write(" ");
+                    Console.WriteLine($"- {employee.Fullname} ID = {employee.IdEmployee}" +
+                            $" ({employee.IdPositionNavigation.Title} ID = {employee.IdPosition})");
+                }
+            }
         }
         #endregion
     }
