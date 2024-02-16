@@ -1,7 +1,17 @@
-﻿using ImportUtility.View_Model;
+﻿using ImportUtility.Model;
+using ImportUtility.View_Model;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Newtonsoft.Json;
 using System;
 using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ImportUtility
 {
@@ -14,8 +24,14 @@ namespace ImportUtility
         private const string HELP = "help";
         private const string IMPORT = "import";
         private const string OUTPUT = "output";
+        private const string DB_CONNECTION = "dbconnection";
+
         #endregion
         static void Main(string[] args)
+        {
+            RunСommandInterpreter(args);
+        }
+        private static void RunСommandInterpreter(string[] args)
         {
             if (args.Length == 0)
                 args = new string[] { "help" };
@@ -34,6 +50,7 @@ namespace ImportUtility
                                     Console.WriteLine("\t{0,-15} Изменить рабочую директорию", CD);
                                     Console.WriteLine("\t{0,-15} Показать файлы/директории в директории", DIR);
                                     Console.WriteLine("\t{0,-15} Очистить консоль", CLEAR);
+                                    Console.WriteLine("\t{0,-15} Строка подключения к БД", DB_CONNECTION);
                                     Console.WriteLine($"\nВведите `{HELP} <command>` в консоли, чтобы узнать о параметрах команды");
                                     break;
                                 }
@@ -231,6 +248,61 @@ namespace ImportUtility
                         Console.Clear();
                         break;
                     }
+                case DB_CONNECTION:
+                    {
+                        switch (args.Length)
+                        {
+                            case 1:
+                                {
+                                    if (File.Exists("appsettings.json"))
+                                    {
+                                        Console.WriteLine("\nТекущая строка подключения:");
+                                        using (UnkCompanyDBContext dbContext = new())
+                                        {
+                                            if (dbContext.Database.CanConnect())
+                                                Console.ForegroundColor = ConsoleColor.Green;
+                                            else
+                                                Console.ForegroundColor = ConsoleColor.DarkRed;
+                                        }
+                                        using (FileStream fs = new("appsettings.json", FileMode.Open, FileAccess.Read))
+                                        {
+                                            using (StreamReader sr = new(fs))
+                                            {
+                                                var appsettings = JsonConvert.DeserializeObject<AppSettings>(sr.ReadToEnd());
+                                                Console.WriteLine(appsettings.ConnectionStrings.DefaultConnection);
+                                            }
+                                        }
+                                        Console.ForegroundColor = ConsoleColor.Gray;
+                                    }
+                                    else
+                                        Console.WriteLine("Строка подключения отсутсвует");
+                                    break;
+                                }
+                            case 3:
+                                {
+                                    switch (args[1].ToLower())
+                                    {
+                                        case "set":
+                                            {
+                                                SetDBConnection(args[2]);
+                                                break;
+                                            }
+                                        default:
+                                            {
+                                                Console.WriteLine($"Неизвестный параметр `{args[1]}` для команды `{DB_CONNECTION}`.\nВведите `{HELP} {DB_CONNECTION}` для получения информации о доступных параметрах команды.");
+                                                break;
+                                            }
+                                    }
+                                    break;
+                                }
+                            default:
+                                {
+                                    Console.WriteLine($"Команда `{DB_CONNECTION}` не может содержать {args.Length} параметр(ов). Введите `{HELP}` для получения информации о доступных командах");
+                                    break;
+                                }
+                        }
+                        break;
+                    }
                 default:
                     {
                         Console.WriteLine($"Неизвестная команда `{args[0]}`.\nВведите `help` для получения информации о доступных командах.");
@@ -243,8 +315,27 @@ namespace ImportUtility
             Console.ForegroundColor = ConsoleColor.Gray;
             Console.Title = $"ImportUtility:{Directory.GetCurrentDirectory()}";
             Console.Write(">");
-            args = Console.ReadLine().Split(' ');
-            Main(args);
+            string input = Console.ReadLine();
+            args = Regex.Split(input, @"\s(?=(?:[^""]*""[^""]*"")*[^""]*$)")
+                                .Where(s => !String.IsNullOrEmpty(s))
+                                .Select(s => s.Trim('"'))
+                                .ToArray();
+            Console.WriteLine();
+            RunСommandInterpreter(args);
+        }
+        private static void SetDBConnection(string inputConnection)
+        {
+            AppSettings appsettings = new();
+            appsettings.ConnectionStrings = new AppSettings.ConnectionStringInfo { DefaultConnection = inputConnection };
+
+            using (FileStream fs = new("appsettings.json", FileMode.Truncate))
+            {
+                using (StreamWriter sw = new StreamWriter(fs))
+                {
+                    string json = JsonConvert.SerializeObject(appsettings);
+                    sw.Write(json);
+                }
+            }
         }
     }
 }
