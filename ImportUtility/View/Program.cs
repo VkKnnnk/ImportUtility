@@ -221,7 +221,7 @@ namespace ImportUtility
                                 {
                                     try
                                     {
-                                        DataParser.ParseDataFromFile(args[1], args[2]);
+                                        DataParser.ParseDataFromFile(args[1], args[2].ToLower());
                                     }
                                     catch (FileNotFoundException ex)
                                     {
