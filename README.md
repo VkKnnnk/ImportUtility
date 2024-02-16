@@ -36,3 +36,9 @@ ImportUtility - консольное приложение, которое пре
 
 * `output` - выводит в консоль иерархический список всех подразделений
 * `output <idDepаrtment>` - выводит в консоль цепочку родителей и список сотрудников для определенного подразделения
+## Технологии проекта
+* C#, .Net, SQL
+* MS SQL, MS SQL Server Managment Studio
+* EntityFramework, LINQ, Regex, Json
+## Ссылки
+Проект выполнен по [заданию](https://github.com/STARKOV-Group/SGTest) от работадателя 
