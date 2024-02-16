@@ -1,23 +1,16 @@
 ﻿using ImportUtility.Model;
 using ImportUtility.View_Model;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace ImportUtility
 {
     class Program
     {
-        #region Constants
+        #region Commands constants
         private const string CLEAR = "clear";
         private const string CD = "cd";
         private const string DIR = "dir";
@@ -25,7 +18,6 @@ namespace ImportUtility
         private const string IMPORT = "import";
         private const string OUTPUT = "output";
         private const string DB_CONNECTION = "dbconnection";
-
         #endregion
         static void Main(string[] args)
         {
@@ -34,7 +26,8 @@ namespace ImportUtility
         private static void RunСommandInterpreter(string[] args)
         {
             if (args.Length == 0)
-                args = new string[] { "help" };
+                args = new string[] { HELP };
+
             switch (args[0].ToLower())
             {
                 case HELP:
@@ -50,7 +43,7 @@ namespace ImportUtility
                                     Console.WriteLine("\t{0,-15} Изменить рабочую директорию", CD);
                                     Console.WriteLine("\t{0,-15} Показать файлы/директории в директории", DIR);
                                     Console.WriteLine("\t{0,-15} Очистить консоль", CLEAR);
-                                    Console.WriteLine("\t{0,-15} Строка подключения к БД", DB_CONNECTION);
+                                    Console.WriteLine("\t{0,-15} Подключение к базе данных", DB_CONNECTION);
                                     Console.WriteLine($"\nВведите `{HELP} <command>` в консоли, чтобы узнать о параметрах команды");
                                     break;
                                 }
@@ -96,9 +89,16 @@ namespace ImportUtility
                                                 Console.WriteLine("\t{0,-15} Очистить консоль", "<>");
                                                 break;
                                             }
+                                        case DB_CONNECTION:
+                                            {
+                                                Console.WriteLine($"\nКоманда `{DB_CONNECTION}`:\n");
+                                                Console.WriteLine("\t{0,-30} Посмотреть строку подключения", "<>");
+                                                Console.WriteLine("\t{0,-30} Установить строку подк", "<set> <\"строка_подключения\">");
+                                                break;
+                                            }
                                         default:
                                             {
-                                                Console.WriteLine($"Неизвестная команда `{args[1]}`.\nВведите `help` для получения информации о доступных командах.");
+                                                Console.WriteLine($"Неизвестная команда `{args[1]}`.\nВведите `{HELP}` для получения информации о доступных командах.");
                                                 break;
                                             }
                                     }
@@ -145,6 +145,11 @@ namespace ImportUtility
                                                 break;
                                             }
                                     }
+                                    break;
+                                }
+                            default:
+                                {
+                                    Console.WriteLine($"Команда `{CD}` не может содержать {args.Length - 1} параметр(ов).\nВведите `{HELP} {CD}` для получения информации о доступных параметрах");
                                     break;
                                 }
                         }
@@ -202,7 +207,7 @@ namespace ImportUtility
                                 }
                             default:
                                 {
-                                    Console.WriteLine($"Команда `output` не может содержать {args.Length} параметр(ов). Введите `help` для получения информации о доступных командах");
+                                    Console.WriteLine($"Команда `{OUTPUT}` не может содержать {args.Length - 1} параметр(ов).\nВведите `{HELP} {OUTPUT}` для получения информации о доступных параметрах");
                                     break;
                                 }
                         }
@@ -297,7 +302,7 @@ namespace ImportUtility
                                 }
                             default:
                                 {
-                                    Console.WriteLine($"Команда `{DB_CONNECTION}` не может содержать {args.Length} параметр(ов). Введите `{HELP}` для получения информации о доступных командах");
+                                    Console.WriteLine($"Команда `{DB_CONNECTION}` не может содержать {args.Length} параметр(ов).\nВведите `{HELP} {DB_CONNECTION}` для получения информации о доступных командах");
                                     break;
                                 }
                         }
@@ -305,7 +310,7 @@ namespace ImportUtility
                     }
                 default:
                     {
-                        Console.WriteLine($"Неизвестная команда `{args[0]}`.\nВведите `help` для получения информации о доступных командах.");
+                        Console.WriteLine($"Неизвестная команда `{args[0]}`.\nВведите `{HELP}` для получения информации о доступных командах.");
                         break;
                     }
             }
@@ -320,7 +325,6 @@ namespace ImportUtility
                                 .Where(s => !String.IsNullOrEmpty(s))
                                 .Select(s => s.Trim('"'))
                                 .ToArray();
-            Console.WriteLine();
             RunСommandInterpreter(args);
         }
         private static void SetDBConnection(string inputConnection)
@@ -330,7 +334,7 @@ namespace ImportUtility
 
             using (FileStream fs = new("appsettings.json", FileMode.Truncate))
             {
-                using (StreamWriter sw = new StreamWriter(fs))
+                using (StreamWriter sw = new(fs))
                 {
                     string json = JsonConvert.SerializeObject(appsettings);
                     sw.Write(json);

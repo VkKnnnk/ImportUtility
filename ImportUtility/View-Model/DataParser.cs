@@ -1,14 +1,10 @@
 ﻿using ImportUtility.Model;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace ImportUtility.View_Model
 {
@@ -135,7 +131,6 @@ namespace ImportUtility.View_Model
                 dBContext.SaveChanges();
             }
         }
-
         private static object MapDataToIds(string[] data, string type)
         {
             switch (type)
