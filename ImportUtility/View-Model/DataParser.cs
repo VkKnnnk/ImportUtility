@@ -95,7 +95,7 @@ namespace ImportUtility.View_Model
                                 continue;
                             }
 
-                            UpdateOrAddDBData(mappedData, type, dBContext);
+                            UpdateOrAddDBData(mappedData, dBContext);
                         }
                     }
                 }
@@ -184,73 +184,62 @@ namespace ImportUtility.View_Model
             }
             return null;
         }
-        private static void UpdateOrAddDBData(object data, string type, UnkCompanyDBContext dBContext)
+        #endregion
+        private static void UpdateOrAddDBData(object data, UnkCompanyDBContext dBContext)
         {
-            switch (type)
+            if (data is Department departmentFromData)
             {
-                case TABLE_D:
-                    {
-                        List<Department> contextDepartments = dBContext.Departments.ToList();
-                        Department departmentFromData = data as Department;
+                List<Department> contextDepartments = dBContext.Departments.ToList();
 
-                        if (contextDepartments.Any(x =>
-                            x.Title.ToLower() == departmentFromData.Title.ToLower() &&
-                            x.IdParentDepartment == departmentFromData.IdParentDepartment))
-                        {
-                            Department contextDepartment = contextDepartments.
-                                FirstOrDefault(x => x.Title.ToLower() == departmentFromData.Title.ToLower() &&
-                                x.IdParentDepartment == departmentFromData.IdParentDepartment);
+                if (contextDepartments.Any(x =>
+                    x.Title.ToLower() == departmentFromData.Title.ToLower() &&
+                    x.IdParentDepartment == departmentFromData.IdParentDepartment))
+                {
+                    Department contextDepartment = contextDepartments.
+                        FirstOrDefault(x => x.Title.ToLower() == departmentFromData.Title.ToLower() &&
+                        x.IdParentDepartment == departmentFromData.IdParentDepartment);
 
-                            if (contextDepartment.Phone != departmentFromData.Phone)
-                                contextDepartment.Phone = departmentFromData.Phone;
+                    if (contextDepartment.Phone != departmentFromData.Phone)
+                        contextDepartment.Phone = departmentFromData.Phone;
 
-                            if (contextDepartment.IdDirector != departmentFromData.IdDirector)
-                                contextDepartment.IdDirector = departmentFromData.IdDirector;
-                        }
-                        else
-                            dBContext.Departments.Add(departmentFromData);
-                        break;
-                    }
-                case TABLE_E:
-                    {
-                        List<Employee> contextEmployees = dBContext.Employees.ToList();
-                        Employee employeeFromData = data as Employee;
+                    if (contextDepartment.IdDirector != departmentFromData.IdDirector)
+                        contextDepartment.IdDirector = departmentFromData.IdDirector;
+                }
+                else
+                    dBContext.Departments.Add(departmentFromData);
+            }
+            else if (data is Employee employeeFromData)
+            {
+                List<Employee> contextEmployees = dBContext.Employees.ToList();
 
-                        if (contextEmployees.Any(x => x.Fullname.ToLower() == employeeFromData.Fullname.ToLower()))
-                        {
-                            Employee contextEmployee = contextEmployees.
-                                FirstOrDefault(x => x.Fullname.ToLower() == employeeFromData.Fullname.ToLower());
+                if (contextEmployees.Any(x => x.Fullname.ToLower() == employeeFromData.Fullname.ToLower()))
+                {
+                    Employee contextEmployee = contextEmployees.
+                        FirstOrDefault(x => x.Fullname.ToLower() == employeeFromData.Fullname.ToLower());
 
-                            if (contextEmployee.IdDepartment != employeeFromData.IdDepartment)
-                                contextEmployee.IdDepartment = employeeFromData.IdDepartment;
+                    if (contextEmployee.IdDepartment != employeeFromData.IdDepartment)
+                        contextEmployee.IdDepartment = employeeFromData.IdDepartment;
 
-                            if (contextEmployee.Login != employeeFromData.Login)
-                                contextEmployee.Login = employeeFromData.Login;
+                    if (contextEmployee.Login != employeeFromData.Login)
+                        contextEmployee.Login = employeeFromData.Login;
 
-                            if (contextEmployee.Password != employeeFromData.Password)
-                                contextEmployee.Password = employeeFromData.Password;
+                    if (contextEmployee.Password != employeeFromData.Password)
+                        contextEmployee.Password = employeeFromData.Password;
 
-                            if (contextEmployee.IdPosition != employeeFromData.IdPosition)
-                                contextEmployee.IdPosition = employeeFromData.IdPosition;
-                        }
-                        else
-                            dBContext.Employees.Add(employeeFromData);
-                        break;
-                    }
-                case TABLE_P:
-                    {
-                        List<Position> contextPositions = dBContext.Positions.ToList();
-                        Position positionFromData = data as Position;
+                    if (contextEmployee.IdPosition != employeeFromData.IdPosition)
+                        contextEmployee.IdPosition = employeeFromData.IdPosition;
+                }
+                else
+                    dBContext.Employees.Add(employeeFromData);
+            }
+            else if (data is Position positionFromData)
+            {
+                List<Position> contextPositions = dBContext.Positions.ToList();
 
-                        if (!contextPositions.Any(x => x.Title.ToLower() == positionFromData.Title.ToLower()))
-                            dBContext.Positions.Add(new Position { Title = positionFromData.Title });
-                        break;
-                    }
-                default:
-                    throw new ArgumentOutOfRangeException(type);
+                if (!contextPositions.Any(x => x.Title.ToLower() == positionFromData.Title.ToLower()))
+                    dBContext.Positions.Add(new Position { Title = positionFromData.Title });
             }
         }
-        #endregion
         #region Display methods
         private static void DisplayChangesAndData(UnkCompanyDBContext dBContext)
         {
